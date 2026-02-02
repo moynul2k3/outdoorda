@@ -1,0 +1,12 @@
+Hi {{ name if name else '' }},
+
+{{ message }}
+
+Your OTP for Biko All In One is:
+
+{{ otp }}
+
+This OTP expires in {{ expires_in }} minutes.
+
+Thanks,
+Biko All In One
