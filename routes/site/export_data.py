@@ -59,7 +59,7 @@ async def serialize_agent_performance_table(
 
     rows: list[dict[str, Any]] = []
 
-    agents_qs = User.filter(role=UserRole.AGENT)
+    agents_qs = User.filter(role=UserRole.CUSTOMER)
     if agent_id:
         agents_qs = agents_qs.filter(id=agent_id)
 
@@ -95,7 +95,7 @@ async def serialize_agent_performance_table(
 
 @router.get(
     "/export",
-    dependencies=[Depends(role_required(UserRole.MANAGER, isGranted=True))],
+    dependencies=[Depends(role_required(UserRole.INSTALLER, isGranted=True))],
 )
 async def export_agent_performance_table(
     export_type: str = Query("agent_performance", description="agent_performance | call_analytics"),

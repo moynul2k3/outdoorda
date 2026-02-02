@@ -26,8 +26,8 @@ class Group(models.Model):
 
 
 class UserRole(str, Enum):
-    AGENT = "AGENT"
-    MANAGER = "MANAGER"
+    CUSTOMER = "CUSTOMER"
+    INSTALLER = "INSTALLER"
     ADMIN = "ADMIN"
 
 class User(models.Model):
@@ -37,8 +37,7 @@ class User(models.Model):
     password = fields.CharField(max_length=128)
     photo = fields.CharField(max_length=255, null=True, blank=True)
     phone = fields.CharField(max_length=255, null=True, blank=True)
-    department = fields.CharField(max_length=255, null=True, blank=True)
-    report_to = fields.ForeignKeyField("models.User", related_name="report_to_user", blank=True, null=True)
+    address = fields.TextField(null=True, blank=True)
 
     role = fields.CharEnumField(UserRole)
 
@@ -46,8 +45,10 @@ class User(models.Model):
     is_staff = fields.BooleanField(default=False)
 
     last_login_at = fields.DatetimeField(null=True)
-
     is_otp = fields.BooleanField(default=False)
+
+    fcm_token = fields.CharField(max_length=256)
+    fcm_platform = fields.CharField(max_length=32)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
@@ -95,7 +96,7 @@ class User(models.Model):
             text = "USR"
             if self.role == UserRole.ADMIN:
                 text = "ADM"
-            if self.role == UserRole.MANAGER:
+            if self.role == UserRole.INSTALLER:
                 text = "MNG"
             if self.role == UserRole.ADMIN:
                 text = "AGN"

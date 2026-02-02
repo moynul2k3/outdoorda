@@ -45,7 +45,7 @@ async def create_user(
     password: str = Form(...),
     name: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
-    role: Optional[UserRole] = Form(UserRole.AGENT),
+    role: Optional[UserRole] = Form(UserRole.CUSTOMER),
     is_active: Optional[bool] = Form(True),
     photo: Optional[UploadFile] = File(None),
 ):
