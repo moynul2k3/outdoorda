@@ -47,9 +47,6 @@ class User(models.Model):
     last_login_at = fields.DatetimeField(null=True)
     is_otp = fields.BooleanField(default=False)
 
-    fcm_token = fields.CharField(max_length=256)
-    fcm_platform = fields.CharField(max_length=32)
-
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -105,4 +102,14 @@ class User(models.Model):
             self.password = self.set_password(self.password)
 
         await super().save(*args, **kwargs)
+
+
+
+class DeviceToken(models.Model):
+    id = fields.IntField(pk=True)
+    user_id = fields.IntField()
+    token = fields.CharField(max_length=256)
+    platform = fields.CharField(max_length=32)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
