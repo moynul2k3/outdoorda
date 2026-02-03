@@ -10,6 +10,7 @@ migrations/**
 *.iml
 run.py
 app/quiklerider-firebase-sdk.json
+*.json
 
 
 # Virtual environment
