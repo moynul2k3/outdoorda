@@ -11,6 +11,7 @@ migrations/**
 run.py
 
 
+
 # Virtual environment
 menv/
 venv/
