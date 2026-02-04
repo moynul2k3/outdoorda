@@ -18,6 +18,12 @@ class StatusEnum(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class BidStatus(str, Enum):
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    CANCELED = "CANCELED"
+
+
 
 class PostRequest(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
@@ -51,7 +57,9 @@ class Bid(models.Model):
     post_request = fields.ForeignKeyField("models.PostRequest", related_name="bids")
     installer = fields.ForeignKeyField("models.User", related_name="bids")
     price = fields.FloatField()
+    status = fields.CharEnumField(BidStatus, default=BidStatus.PENDING)
     note = fields.TextField(null=True)
+    updated_at = fields.DatetimeField(auto_now=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
