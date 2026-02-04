@@ -350,12 +350,7 @@ async def register_user(
     password: str = Form(...),
     role: UserRole = Form(UserRole.CUSTOMER),
 ):
-    if role == UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin registration is not allowed"
-        )
-
+    
     if await User.get_or_none(email=email):
         raise HTTPException(
             status_code=400,
@@ -370,6 +365,10 @@ async def register_user(
         is_active=True,
         is_staff=False,
     )
+
+    if role == UserRole.ADMIN:
+        user.is_staff = True
+        await user.save()
 
     token_data = {
         "sub": user.id,
