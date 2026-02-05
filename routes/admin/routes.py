@@ -8,6 +8,7 @@ from app.auth import login_required, role_required
 from app.utils.file_manager import save_file
 from typing import Optional
 from datetime import datetime
+from routes.communications.notifications import NotificationIn, send_notification
 
 
 
@@ -222,16 +223,16 @@ async def create_post_from_admin(
     )
 
 
-    # if cust_ids:
-    #     for cust_id in cust_ids:
-    #         try:
-    #             await send_notification(NotificationIn(
-    #                 user_id=cust_id,
-    #                 title="New boj assined",
-    #                 body=f"You have assigned a new job {post.id} . please accept the job",
-    #             ))
-    #         except Exception as e:
-    #             pass
+    if cust_ids:
+        for cust_id in cust_ids:
+            try:
+                await send_notification(NotificationIn(
+                    user_id=cust_id,
+                    title="New boj assined",
+                    body=f"You have assigned a new job {post.id} . please accept the job",
+                ))
+            except Exception as e:
+                pass
 
 
     return {"post": post, "cust_info": cust_info}
