@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Re
 from pydantic import BaseModel
 from applications.user.models import User, UserRole
 from applications.customer.pets import Pet
+from applications.customer.models import InstallerReview
 from app.token import get_current_user
 from app.auth import login_required, role_required
 from app.utils.file_manager import save_file
@@ -115,3 +116,26 @@ async def update_pet(
     
     await pet.save()
     return {"pet": pet}
+
+
+
+@router.post("/review")
+async def review(
+    installer_id: str = Form(...),
+    rating: Optional[int] = Form(None),
+    review: Optional[str] = Form(None),
+    user: User = Depends(get_current_user)
+    ):
+    installer = await User.get(id=installer_id)
+    if not installer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Installer not found")
+    
+    reviews = await InstallerReview.create(
+        installer_id = installer_id,
+        user_id = user.id,
+        rating = rating,
+        review = review
+    )
+
+
+    return {"review": reviews}

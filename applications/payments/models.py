@@ -1,0 +1,32 @@
+from tortoise import fields, models
+
+
+
+
+class Payment(models.Model):
+    id = fields.UUIDField(pk=True)
+    post = fields.ForeignKeyField("models.PostRequest", related_name="payments")
+    customer = fields.ForeignKeyField("models.User", related_name="customer_payments")
+    installer = fields.ForeignKeyField("models.User", related_name="installer_payments")
+    stripe_payment_intent_id = fields.CharField(max_length=100, unique=True)
+    stripe_charge_id = fields.CharField(max_length=100, null=True)
+    amount = fields.IntField()              # total in cents
+    platform_fee = fields.IntField()        # your commission in cents
+    installer_amount = fields.IntField()    # amount installer gets
+    currency = fields.CharField(max_length=10, default="usd")
+    status = fields.CharField(max_length=30, default="pending") # pending | succeeded | failed | refunded
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+
+
+class Payout(models.Model):
+    id = fields.UUIDField(pk=True)
+    installer = fields.ForeignKeyField("models.User", related_name="payouts")
+    stripe_payout_id = fields.CharField(max_length=100)
+    amount = fields.IntField()
+    currency = fields.CharField(max_length=10)
+    status = fields.CharField(max_length=30) # pending | paid | failed
+    arrival_date = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+

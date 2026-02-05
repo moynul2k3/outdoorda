@@ -1,20 +1,37 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Response, UploadFile, File, Query
 from pydantic import BaseModel
-from firebase_admin import messaging
-from applications.user.models import User, DeviceToken
-from applications.communication.notifications import PushNotification, NotificationSetting
-from app.utils.firebase_push import cred
+from applications.user.models import User, UserRole, DeviceToken
 from app.token import get_current_user
 
-from passlib.context import CryptContext
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from app.auth import login_required, role_required
+from firebase_admin import messaging
+from applications.communication.notifications import PushNotification, NotificationSetting
+from app.utils.firebase_push import cred
 
-router = APIRouter(tags=['Notifications'])
+
+
+
+
+
+router = APIRouter(tags=['notification'])
+
+
+
+
+
 
 class DeviceTokenIn(BaseModel):
     user_id: int
     token: str
     platform: str
+
+class NotificationIn(BaseModel):
+    user_id: int
+    title: str
+    body: str
+
+
+
 
 @router.post("/save_token/")
 async def save_device_token(data: DeviceTokenIn, user: User = Depends(get_current_user)):
@@ -26,10 +43,7 @@ async def save_device_token(data: DeviceTokenIn, user: User = Depends(get_curren
         await DeviceToken.create(**data.dict())
     return {"status": "success"}
 
-class NotificationIn(BaseModel):
-    user_id: int
-    title: str
-    body: str
+
 
 @router.post("/send_notification/")
 async def send_notification(data: NotificationIn):
