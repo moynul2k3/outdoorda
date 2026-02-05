@@ -47,6 +47,9 @@ class User(models.Model):
     last_login_at = fields.DatetimeField(null=True)
     is_otp = fields.BooleanField(default=False)
 
+    stripe_account_id = fields.CharField(max_length=100, null=True)
+    stripe_account_completed = fields.BooleanField(default=False)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

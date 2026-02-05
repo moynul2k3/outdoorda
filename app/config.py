@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
 
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+
     def model_post_init(self, __context):
         if self.DB_ENGINE == "sqlite":
             self.DATABASE_URL = f"sqlite:///{self.DB_NAME}"
