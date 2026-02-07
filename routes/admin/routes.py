@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Response, UploadFile, File, Query
 from pydantic import BaseModel
 from applications.user.models import User, UserRole
-from applications.admin.models import FAQ, ContactInfo, CustomerInfo
+from applications.admin.models import FAQ, ContactInfo, CustomerInfo, ServiceArea, JobManagementSettings
 from app.token import get_current_user
 from applications.customer.posts import PostRequest, Bid, InstallationSurface, StatusEnum, BidStatus
 from app.auth import login_required, role_required
@@ -236,3 +236,52 @@ async def create_post_from_admin(
 
 
     return {"post": post, "cust_info": cust_info}
+
+
+
+
+@router.post("/service-areas")
+async def create_service_area(
+    name: str = Form(...),
+    user: User = Depends(role_required(UserRole.ADMIN))):
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    
+    area = await ServiceArea.filter(name=name)
+
+    if area:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Area already exist!")
+    
+    area = await ServiceArea.create(
+        name = name
+    )
+
+    return area
+
+
+
+
+
+@router.post("/job-management-settings")
+async def job_management(
+    auto_assign_job: Optional[bool] = Form(None),
+    job_timeout_hours: Optional[int] = Form(None),
+    user: User = Depends(role_required(UserRole.ADMIN))
+    ):
+    job_settings = await JobManagementSettings.filter().first()
+
+    if job_settings:
+        if auto_assign_job:
+            job_settings.auto_assign_job = auto_assign_job
+        if job_timeout_hours:
+            job_settings.job_timeout_hours = job_timeout_hours
+        
+        await job_settings.save()
+
+    else: 
+        job_settings = await JobManagementSettings.create(
+            auto_assign_job = auto_assign_job,
+            job_timeout_hours = job_timeout_hours
+        )
+
+    return job_settings
