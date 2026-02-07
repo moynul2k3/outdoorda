@@ -17,7 +17,8 @@ class PushNotification(models.Model):
 class NotificationSetting(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
     user = fields.ForeignKeyField("models.User", related_name="notification_settings")
-    is_enabled = fields.BooleanField(default=True)
+    push_notification = fields.BooleanField(default=True)
+    email_notification = fields.BooleanField(default=True)
 
     class Meta:
         table = "notification_settings"
