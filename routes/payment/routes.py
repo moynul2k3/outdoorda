@@ -102,7 +102,8 @@ async def create_payment_intent(
     intent = stripe.PaymentIntent.create(
         amount=amount,
         currency="usd",
-        automatic_payment_methods={"enabled": True},
+        automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+       
 
         transfer_data={
             "destination": installer.stripe_account_id
