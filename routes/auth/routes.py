@@ -90,34 +90,34 @@ Use the following **test credentials** to explore the API based on different rol
 #### 👑 **Admin User**
 - **Email:** `admin@gmail.com`  
 - **Password:** `admin`  
-- **Role:** Admin  
+- **Role:** ADMIN  
 - **Group:** Admins  
 - **Flags:** Staff, Superuser  
 
 ---
 
-#### 🧑‍💼 **Manager User**
-- **Email:** `manager@gmail.com`  
-- **Password:** `manager`  
-- **Role:** Manager  
-- **Group:** Managers  
+#### 🧑‍💼 **Installer User**
+- **Email:** `installer@gmail.com`  
+- **Password:** `installer`  
+- **Role:** INSTALLER  
+- **Group:** Installers  
 - **Flags:** Staff  
 
 ---
 
-#### 🧑‍💻 **Agent One**
-- **Email:** `agent1@gmail.com`  
-- **Password:** `agent`  
-- **Role:** Agent  
-- **Group:** Agents  
+#### 🧑‍💻 **customer One**
+- **Email:** `customer1@gmail.com`  
+- **Password:** `customer`  
+- **Role:** CUSTOMER  
+- **Group:** customers  
 
 ---
 
-#### 🧑‍💻 **Agent Two**
-- **Email:** `agent2@gmail.com`  
-- **Password:** `agent`  
-- **Role:** Agent  
-- **Group:** Agents  
+#### 🧑‍💻 **customer Two**
+- **Email:** `customer2@gmail.com`  
+- **Password:** `customer`  
+- **Role:** CUSTOMER  
+- **Group:** customers  
 
 ---
 
@@ -338,5 +338,52 @@ async def verify_token(request: Request, user: User = Depends(get_current_user))
         response_data["new_tokens"] = request.state.new_tokens
 
     return response_data
+
+
+
+
+
+@router.post("/register/", status_code=status.HTTP_201_CREATED)
+async def register_user(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    role: UserRole = Form(UserRole.CUSTOMER),
+):
+    
+    if await User.get_or_none(email=email):
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
+    user = await User.create(
+        name=name,
+        email=email,
+        password=password,  # auto-hashed in model.save()
+        role=role,
+        is_active=True,
+        is_staff=False,
+    )
+
+    if role == UserRole.ADMIN:
+        user.is_staff = True
+        await user.save()
+
+    token_data = {
+        "sub": user.id,
+        "role": user.role,
+        "is_active": user.is_active,
+        "is_staff": user.is_staff,
+    }
+
+    return {
+        "status": "success",
+        "message": "Registration successful",
+        "access_token": create_access_token(token_data),
+        "refresh_token": create_refresh_token(token_data),
+        "token_type": "bearer",
+        "role": user.role,
+    }
 
 
