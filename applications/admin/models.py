@@ -44,3 +44,30 @@ class CustomerInfo(models.Model):
         table = "customer_info"
 
 
+    
+
+class ServiceArea(models.Model):
+    id = fields.IntField(pk=True)
+    name = fields.CharField(max_length=100, unique=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "service_area"
+
+    def __str__(self):
+        return self.name
+    
+
+
+
+class JobManagementSettings(models.Model):
+    id = fields.IntField(pk=True)
+    auto_assign_job = fields.BooleanField(default=False)
+    job_timeout_hours = fields.IntField(default=60)
+
+
+    class Meta:
+        table = "job_managements"
+
+
+

@@ -7,6 +7,7 @@ from app.auth import login_required, role_required
 from firebase_admin import messaging
 from applications.communication.notifications import PushNotification, NotificationSetting
 from app.utils.firebase_push import cred
+from typing import Optional
 
 
 
@@ -86,21 +87,27 @@ async def test(user: User = Depends(get_current_user)):
    
 
 @router.put("/toggle_notifications/")
-async def toggle_notifications(enabled: bool, user: User = Depends(get_current_user)):
+async def toggle_notifications(
+    push_notification: Optional[bool] = Form(None),
+    email_notification: Optional[bool] = Form(None), 
+    user: User = Depends(get_current_user)):
     setting = await NotificationSetting.filter(user=user).first()
     if setting:
-        setting.is_enabled = enabled
+        if push_notification:
+            setting.push_notification = push_notification
+        if email_notification:
+            setting.email_notification = email_notification
         await setting.save()
     else:
-        await NotificationSetting.create(user=user, is_enabled=enabled)
-    return {"status": "success", "is_enabled": enabled}
+        await NotificationSetting.create(user=user, push_notification=push_notification, email_notification=email_notification)
+    return {"status": "success", "push_notification": push_notification, "email_notification": email_notification}
 
 @router.get("/notification_settings/")
 async def get_notification_settings(user: User = Depends(get_current_user)):
     setting = await NotificationSetting.filter(user=user).first()
-    if setting:
-        return {"is_enabled": setting.is_enabled}
-    return {"is_enabled": True}  # Default to enabled if no setting found
+    if not setting:
+        raise HTTPException(status_code=404, detail="Notification settings not found")
+    return setting  # Default to enabled if no setting found
    
 
 @router.get("/get_notifications/")
