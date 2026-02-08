@@ -29,6 +29,7 @@ class PostRequest(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
     customer = fields.ForeignKeyField("models.User", related_name="posts")
     installer = fields.ForeignKeyField("models.User", related_name="assigned_posts", null=True)
+    area = fields.ForeignKeyField("models.ServiceArea", related_name="post_area", on_delete=fields.CASCADE)
     pet_name = fields.CharField(max_length=100)
     pet_type = fields.CharField(max_length=100)
     price = fields.FloatField()
