@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from applications.user.models import User, UserRole
 from app.token import get_current_user
 from applications.customer.posts import PostRequest, Bid, InstallationSurface, StatusEnum
+from applications.installer.models import InstallerServiceArea
+from routes.communications.notifications import send_notification, NotificationIn
 from app.auth import login_required, role_required
 from app.utils.file_manager import save_file
 from typing import Optional
@@ -24,6 +26,7 @@ async def create_post(
     price: float = Form(...),
     size: str = Form(...),
     installation_surface: InstallationSurface = Form(...),
+    service_area_id: int = Form(...),
     address: str = Form(...),
     photos: list[UploadFile] = File(None),
     user: User = Depends(role_required(UserRole.CUSTOMER))
@@ -47,9 +50,25 @@ async def create_post(
         price=price,
         size=size,
         installation_surface=installation_surface,
+        area_id = service_area_id,
         Address=address,
         photos=photo_urls
     )
+
+    area_installers = await InstallerServiceArea.filter(area_id = service_area_id)
+
+
+    for area in area_installers:
+        print(f"installer id: {area.installer_id}")
+        try:
+            await send_notification(NotificationIn(
+                user_id=area.installer_id,
+                title="New Job alert",
+                body=f"New job afears id {post.id}. please accept it"
+            ))
+
+        except:
+            pass
 
     return {"post": post}
 
