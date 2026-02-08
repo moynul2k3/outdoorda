@@ -17,12 +17,17 @@ class ChatMessage(Model):
     to_id = fields.CharField(max_length=100)
     
     # Message content
-    text = fields.TextField()
+    text = fields.TextField(null=True)
     message_id = fields.CharField(max_length=100, unique=True)  # UUID for idempotency
+    media_type = fields.CharField(max_length=20, null=True)  # "image", etc.
+    media_url = fields.CharField(max_length=500, null=True)
     
     # Status tracking
     is_read = fields.BooleanField(default=False)
     is_delivered = fields.BooleanField(default=False)
+    is_deleted = fields.BooleanField(default=False)
+    edited_at = fields.DatetimeField(null=True)
+    reactions = fields.JSONField(default=dict)  # {"👍": ["installers:123", "customers:456"]}
     
     # Metadata
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -36,8 +41,8 @@ class ChatMessage(Model):
         ]
     
     def __str__(self):
-        return f"{self.from_type}:{self.from_id} -> {self.to_type}:{self.to_id}: {self.text[:50]}"
-
+        return f"{self.from_type}:{self.from_id} -> {self.to_type}:{self.to_id}: {self.text[:50] if self.text else 'Media'}"
+    
 
 class ChatSession(Model):
     """Track active chat sessions between users"""
@@ -101,5 +106,3 @@ class OfflineNotification(Model):
             ["expires_at"],
         ]
 
-
-       

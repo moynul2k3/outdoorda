@@ -1,13 +1,3 @@
-
-"""
-Production-grade WebSocket Manager with persistence and offline support
-- Messages persist to database
-- Offline users receive messages on reconnection
-- Active chat state persists
-- Notifications queued for offline users
-- Location history maintained
-"""
-
 import asyncio
 import json
 import logging
@@ -17,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from enum import Enum
 import uuid
+from tortoise.expressions import Q
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +74,8 @@ class ProductionConnectionManager:
     3. Maintains chat session state in database
     4. Queues notifications for offline users
     5. Keeps location history for analytics
+    6. Supports message edit, delete, reactions, image sending
+    7. Persistent chat lists with sorting by recent activity
     """
 
     def __init__(self):
@@ -101,7 +94,7 @@ class ProductionConnectionManager:
             }
         }
 
-        # Active chats (will also check database)
+        # Active chats (cache, but methods query DB for accuracy)
         self.active_chats: Dict[str, Set[str]] = defaultdict(set)
 
         # Heartbeat tasks
@@ -145,7 +138,7 @@ class ProductionConnectionManager:
                 f"[ID: {conn.connection_id}]"
             )
 
-            # ⭐ KEY: Deliver offline messages/notifications on reconnection
+            # KEY: Deliver offline messages/notifications on reconnection
             if purpose == ConnectionPurpose.MESSAGING.value:
                 await self._deliver_offline_messages(client_type, str(user_id), conn)
             elif purpose == ConnectionPurpose.NOTIFICATIONS.value:
@@ -185,9 +178,14 @@ class ProductionConnectionManager:
                         "from_type": msg.from_type,
                         "from_id": msg.from_id,
                         "from_name": msg.from_name,
-                        "text": msg.text,
+                        "text": msg.text if not msg.is_deleted else "This message was deleted",
                         "message_id": msg.message_id,
                         "timestamp": msg.created_at.isoformat(),
+                        "edited_at": msg.edited_at.isoformat() if msg.edited_at else None,
+                        "is_deleted": msg.is_deleted,
+                        "reactions": msg.reactions,
+                        "media_type": msg.media_type,
+                        "media_url": msg.media_url,
                         "is_offline_message": True  # Mark as previously offline
                     }
 
@@ -302,7 +300,7 @@ class ProductionConnectionManager:
                         del self.heartbeat_tasks[task_key]
 
 
-                # Cleanup chats (keep session active)
+                # Cleanup chats cache
                 key = f"{client_type}:{user_id}"
                 if key in self.active_chats:
                     for partner_key in list(self.active_chats[key]):
@@ -333,7 +331,7 @@ class ProductionConnectionManager:
     ) -> bool:
         """
         Send message to a user.
-        If user is offline, store in database for later delivery.
+        If user is offline, store in database for later delivery (for notifications only, messages handled separately).
         """
         try:
             user_id = str(user_id)
@@ -346,40 +344,16 @@ class ProductionConnectionManager:
                     self.disconnect(client_type, user_id, purpose)
                 return success
             else:
-                # User is offline - store in database
-                if purpose == ConnectionPurpose.MESSAGING.value:
-                    await self._store_offline_message(message, client_type, user_id)
-                elif purpose == ConnectionPurpose.NOTIFICATIONS.value:
+                # User is offline - store only if notifications
+                if purpose == ConnectionPurpose.NOTIFICATIONS.value:
                     await self._store_offline_notification(message, client_type, user_id)
 
-                logger.info(f"User {client_type}:{user_id} offline - queued message")
+                logger.info(f"User {client_type}:{user_id} offline - queued {purpose}")
                 return True  # We stored it, so return success
 
         except Exception as e:
             logger.error(f"Send failed: {str(e)}")
             return False
-
-    async def _store_offline_message(self, message: dict, client_type: str, user_id: str) -> None:
-        """Store message in database for offline user"""
-        try:
-            from applications.communication.chat import ChatMessage
-
-            msg = ChatMessage(
-                from_type=message.get("from_type"),
-                from_id=message.get("from_id"),
-                from_name=message.get("from_name"),
-                to_type=client_type,
-                to_id=user_id,
-                text=message.get("text"),
-                message_id=message.get("message_id", str(uuid.uuid4())),
-                is_delivered=False,
-                is_read=False
-            )
-            await msg.save()
-            logger.info(f"Stored offline message: {msg.message_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to store offline message: {str(e)}")
 
     async def _store_offline_notification(self, message: dict, client_type: str, user_id: str) -> None:
         """Store notification in database for offline user"""
@@ -430,7 +404,7 @@ class ProductionConnectionManager:
 
     async def start_chat(self, from_type: str, from_id: str, to_type: str, to_id: str) -> bool:
         """
-        Start a chat session between two users.
+        Start a new chat session between two users.
         Creates persistent session in database.
         """
         try:
@@ -467,7 +441,7 @@ class ProductionConnectionManager:
             return False
 
     async def end_chat(self, from_type: str, from_id: str, to_type: str, to_id: str) -> bool:
-        """End a chat session"""
+        """End a chat session (remove from chat list)"""
         try:
             from applications.communication.chat import ChatSession
 
@@ -488,16 +462,25 @@ class ProductionConnectionManager:
                 user2_id=to_id
             )
 
+            if not session:
+                session = await ChatSession.get_or_none(
+                        user1_type=to_type,
+                        user1_id=to_id,
+                        user2_type=from_type,
+                        user2_id=from_id
+                    )
+
             if session:
                 session.is_active = False
                 session.ended_at = datetime.utcnow()
                 await session.save()
 
-            return True
+            logger.info(f"Chat session ended: {from_key} <-> {to_key}")
+            return {"status": True, "session_status": session.is_active}
 
         except Exception as e:
             logger.error(f"Failed to end chat: {str(e)}")
-            return False
+            return {"status": True}
 
     async def is_chatting_with(self, from_type: str, from_id: str, to_type: str, to_id: str) -> bool:
         """
@@ -541,45 +524,247 @@ class ProductionConnectionManager:
         from_id: str,
         to_type: str,
         to_id: str,
-        text: str,
-        from_name: str = None
+        text: Optional[str] = None,
+        from_name: str = None,
+        media_type: Optional[str] = None,
+        media_url: Optional[str] = None
     ) -> bool:
         """
         Send a message and store in database for persistence.
         Works whether recipient is online or offline.
+        Automatically creates chat session if not exists.
+        Supports text and images.
         """
         try:
+            from applications.communication.chat import ChatMessage, ChatSession
+
             message_id = str(uuid.uuid4())
 
-            # Store in database immediately
-            await self._store_offline_message(
-                {
-                    "from_type": from_type,
-                    "from_id": from_id,
-                    "from_name": from_name,
-                    "text": text,
-                    "message_id": message_id
-                },
-                to_type,
-                to_id
+            # Store in database
+            msg = ChatMessage(
+                from_type=from_type,
+                from_id=from_id,
+                from_name=from_name,
+                to_type=to_type,
+                to_id=to_id,
+                text=text,
+                message_id=message_id,
+                is_delivered=False,
+                is_read=False,
+                media_type=media_type,
+                media_url=media_url
             )
+            await msg.save()
 
-            # Send if online
-            message = {
+            # Find or create session
+            session = await ChatSession.get_or_none(
+                Q(user1_type=from_type, user1_id=from_id, user2_type=to_type, user2_id=to_id) |
+                Q(user1_type=to_type, user1_id=to_id, user2_type=from_type, user2_id=from_id)
+            )
+            if not session:
+                session = ChatSession(
+                    user1_type=from_type,
+                    user1_id=from_id,
+                    user2_type=to_type,
+                    user2_id=to_id,
+                    is_active=True,
+                    last_message_at=datetime.utcnow()
+                )
+            else:
+                session.last_message_at = datetime.utcnow()
+                session.is_active = True
+            await session.save()
+
+            # Update in-memory cache
+            from_key = f"{from_type}:{from_id}"
+            to_key = f"{to_type}:{to_id}"
+            self.active_chats[from_key].add(to_key)
+            self.active_chats[to_key].add(from_key)
+
+            # Prepare payload
+            payload = {
                 "type": ConnectionPurpose.MESSAGING.value,
                 "from_type": from_type,
                 "from_id": from_id,
                 "from_name": from_name,
                 "text": text,
                 "message_id": message_id,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "edited_at": None,
+                "is_deleted": False,
+                "reactions": {},
+                "media_type": media_type,
+                "media_url": media_url
             }
 
-            await self.send_to(message, to_type, to_id, ConnectionPurpose.MESSAGING.value)
+            # Send if online and mark delivered
+            conn = self.get_connection(to_type, to_id, ConnectionPurpose.MESSAGING.value)
+            if conn and conn.is_active:
+                success = await conn.send_json(payload)
+                if success:
+                    msg.is_delivered = True
+                    await msg.save()
+                else:
+                    self.disconnect(to_type, to_id, ConnectionPurpose.MESSAGING.value)
+                    return False
+            # Offline: remains is_delivered=False, will deliver on connect
+
             return True
 
         except Exception as e:
             logger.error(f"Failed to send message: {str(e)}")
+            return False
+
+    async def edit_message(
+        self,
+        message_id: str,
+        new_text: str,
+        editor_type: str,
+        editor_id: str
+    ) -> bool:
+        """Edit a message if sender"""
+        try:
+            from applications.communication.chat import ChatMessage
+
+            msg = await ChatMessage.get_or_none(message_id=message_id)
+            if not msg or msg.from_type != editor_type or msg.from_id != editor_id or msg.is_deleted:
+                return False
+
+            msg.text = new_text
+            msg.edited_at = datetime.utcnow()
+            await msg.save()
+
+            # Send control to recipient
+            conn = self.get_connection(msg.to_type, msg.to_id, ConnectionPurpose.MESSAGING.value)
+            if conn and conn.is_active:
+                await conn.send_json({
+                    "type": "control",
+                    "action": "edit",
+                    "message_id": message_id,
+                    "new_text": new_text,
+                    "edited_at": msg.edited_at.isoformat()
+                })
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to edit message: {str(e)}")
+            return False
+
+    async def delete_message(
+        self,
+        message_id: str,
+        deleter_type: str,
+        deleter_id: str
+    ) -> bool:
+        """Delete a message if sender"""
+        try:
+            from applications.communication.chat import ChatMessage
+
+            msg = await ChatMessage.get_or_none(message_id=message_id)
+            if not msg or msg.from_type != deleter_type or msg.from_id != deleter_id:
+                return False
+
+            msg.is_deleted = True
+            await msg.save()
+
+            # Send control to recipient
+            conn = self.get_connection(msg.to_type, msg.to_id, ConnectionPurpose.MESSAGING.value)
+            if conn and conn.is_active:
+                await conn.send_json({
+                    "type": "control",
+                    "action": "delete",
+                    "message_id": message_id
+                })
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete message: {str(e)}")
+            return False
+
+    async def add_reaction(
+        self,
+        message_id: str,
+        reaction: str,
+        user_type: str,
+        user_id: str
+    ) -> bool:
+        """Add reaction to message"""
+        try:
+            from applications.communication.chat import ChatMessage
+
+            msg = await ChatMessage.get_or_none(message_id=message_id)
+            if not msg:
+                return False
+
+            user_key = f"{user_type}:{user_id}"
+            if reaction not in msg.reactions:
+                msg.reactions[reaction] = []
+            if user_key not in msg.reactions[reaction]:
+                msg.reactions[reaction].append(user_key)
+            await msg.save()
+
+            # Send control to both (if online)
+            for t, i in [(msg.from_type, msg.from_id), (msg.to_type, msg.to_id)]:
+                if t == user_type and i == user_id:
+                    continue  # Skip sender
+                conn = self.get_connection(t, i, ConnectionPurpose.MESSAGING.value)
+                if conn and conn.is_active:
+                    await conn.send_json({
+                        "type": "control",
+                        "action": "react",
+                        "message_id": message_id,
+                        "reaction": reaction,
+                        "user": user_key
+                    })
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to add reaction: {str(e)}")
+            return False
+
+    async def remove_reaction(
+        self,
+        message_id: str,
+        reaction: str,
+        user_type: str,
+        user_id: str
+    ) -> bool:
+        """Remove reaction from message"""
+        try:
+            from applications.communication.chat import ChatMessage
+
+            msg = await ChatMessage.get_or_none(message_id=message_id)
+            if not msg:
+                return False
+
+            user_key = f"{user_type}:{user_id}"
+            if reaction in msg.reactions and user_key in msg.reactions[reaction]:
+                msg.reactions[reaction].remove(user_key)
+                if not msg.reactions[reaction]:
+                    del msg.reactions[reaction]
+                await msg.save()
+
+                # Send control to both
+                for t, i in [(msg.from_type, msg.from_id), (msg.to_type, msg.to_id)]:
+                    if t == user_type and i == user_id:
+                        continue
+                    conn = self.get_connection(t, i, ConnectionPurpose.MESSAGING.value)
+                    if conn and conn.is_active:
+                        await conn.send_json({
+                            "type": "control",
+                            "action": "remove_react",
+                            "message_id": message_id,
+                            "reaction": reaction,
+                            "user": user_key
+                        })
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to remove reaction: {str(e)}")
             return False
 
     async def send_notification(
@@ -605,11 +790,48 @@ class ProductionConnectionManager:
                 "timestamp": datetime.utcnow().isoformat()
             }
 
-            return await self.send_to(message, to_type, to_id, ConnectionPurpose.NOTIFICATIONS.value)
+            conn = self.get_connection(to_type, to_id, ConnectionPurpose.NOTIFICATIONS.value)
+            if conn and conn.is_active:
+                success = await conn.send_json(message)
+                return success
+            else:
+                await self._store_offline_notification(message, to_type, to_id)
+                return True
 
         except Exception as e:
             logger.error(f"Failed to send notification: {str(e)}")
             return False
+
+    async def get_chat_partners(self, client_type: str, user_id: str) -> List[Dict]:
+        """Get all active chat partners for a user, sorted by recent activity"""
+        try:
+            from applications.communication.chat import ChatSession
+
+            sessions = await ChatSession.filter(
+                (Q(user1_type=client_type, user1_id=user_id) | Q(user2_type=client_type, user2_id=user_id)) &
+                Q(is_active=True)
+            ).order_by("-last_message_at")
+
+            result = []
+            for s in sessions:
+                if s.user1_type == client_type and s.user1_id == user_id:
+                    result.append({
+                        "type": s.user2_type,
+                        "id": s.user2_id,
+                        "last_message_at": s.last_message_at.isoformat() if s.last_message_at else None
+                    })
+                else:
+                    result.append({
+                        "type": s.user1_type,
+                        "id": s.user1_id,
+                        "last_message_at": s.last_message_at.isoformat() if s.last_message_at else None
+                    })
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting chat partners: {str(e)}")
+            return []
 
     def get_active_users(self, client_type: str = None, purpose: str = None) -> Dict:
         """Get statistics about active connections"""
@@ -628,21 +850,6 @@ class ProductionConnectionManager:
                 for ct in [ClientType.INSTALLERS.value, ClientType.CUSTOMERS.value, ClientType.ADMINS.value]:
                     users = self.connections.get(p, {}).get(ct, {})
                     result[f"{p}:{ct}"] = list(users.keys())
-
-        return result
-
-    def get_chat_partners(self, client_type: str, user_id: str) -> List[Tuple[str, str]]:
-        """Get all active chat partners for a user"""
-        key = f"{client_type}:{user_id}"
-        partners = self.active_chats.get(key, set())
-
-        result = []
-        for p in partners:
-            try:
-                p_type, p_id = p.split(":", 1)
-                result.append((p_type, p_id))
-            except:
-                pass
 
         return result
 
@@ -675,6 +882,7 @@ class ProductionConnectionManager:
 
 # Global instance
 manager = ProductionConnectionManager()
+
 
 
 

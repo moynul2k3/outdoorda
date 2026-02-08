@@ -40,10 +40,40 @@ async def chat_endpoint(
     
     Message format (send):
     {
+        "action": "send",
         "to_type": "customers",
         "to_id": "456",
         "text": "Hello!",
-        "from_name": "John"
+        "from_name": "John",
+        "media_type": "image",  # optional
+        "media_url": "https://..."  # optional
+    }
+    
+    For edit:
+    {
+        "action": "edit",
+        "message_id": "uuid",
+        "new_text": "Updated text"
+    }
+    
+    For delete:
+    {
+        "action": "delete",
+        "message_id": "uuid"
+    }
+    
+    For react:
+    {
+        "action": "react",
+        "message_id": "uuid",
+        "reaction": "👍"
+    }
+    
+    For remove react:
+    {
+        "action": "remove_react",
+        "message_id": "uuid",
+        "reaction": "👍"
     }
     
     Message received:
@@ -55,7 +85,19 @@ async def chat_endpoint(
         "text": "Hello!",
         "timestamp": "2025-12-08T...",
         "message_id": "uuid",
+        "edited_at": null,
+        "is_deleted": false,
+        "reactions": {},
+        "media_type": null,
+        "media_url": null,
         "is_offline_message": false
+    }
+    
+    Control received:
+    {
+        "type": "control",
+        "action": "edit/delete/react/remove_react",
+        ...
     }
     """
     
@@ -86,55 +128,91 @@ async def chat_endpoint(
         while True:
             data = await websocket.receive_json()
 
-            # Extract message details
-            to_type = data.get("to_type")
-            to_id = data.get("to_id")
-            text = data.get("text", "").strip()
-            from_name = data.get("from_name", str(user_id))
+            action = data.get("action", "send")
 
-            # Validate input
-            if not text or not to_type or not to_id:
-                await websocket.send_json({
-                    "error": "Missing required fields",
-                    "required": ["to_type", "to_id", "text"]
-                })
-                continue
+            if action == "send":
+                # Extract message details
+                to_type = data.get("to_type")
+                to_id = data.get("to_id")
+                text = data.get("text")
+                from_name = data.get("from_name", str(user_id))
+                media_type = data.get("media_type")
+                media_url = data.get("media_url")
 
-            to_id = str(to_id)
+                # Validate input
+                if not (text or (media_type and media_url)) or not to_type or not to_id:
+                    await websocket.send_json({
+                        "error": "Missing required fields",
+                        "required": ["to_type", "to_id", "text or media_url"]
+                    })
+                    continue
 
-            # ⭐ KEY CHANGE: Check database for chat session, not just in-memory
-            # This means chat persists even after disconnect
-            if not await manager.is_chatting_with(client_type, user_id, to_type, to_id):
-                await websocket.send_json({
-                    "error": "No active chat with this user",
-                    "hint": "Use /chat/start endpoint to initiate"
-                })
-                continue
+                to_id = str(to_id)
 
-            # Send message (persists in database)
-            success = await manager.send_message(
-                client_type,
-                user_id,
-                to_type,
-                to_id,
-                text,
-                from_name
-            )
+                # Send message (auto-creates session if needed)
+                success = await manager.send_message(
+                    client_type,
+                    user_id,
+                    to_type,
+                    to_id,
+                    text,
+                    from_name,
+                    media_type,
+                    media_url
+                )
 
-            if success:
-                # Publish to Redis for real-time analytics
-                await redis.publish(f"chat:{to_type}:{to_id}", json.dumps({
-                    "from_type": client_type,
-                    "from_id": user_id,
-                    "text": text
-                }))
+                if success:
+                    # Publish to Redis for real-time analytics
+                    await redis.publish(f"chat:{to_type}:{to_id}", json.dumps({
+                        "from_type": client_type,
+                        "from_id": user_id,
+                        "text": text
+                    }))
 
-                await websocket.send_json({
-                    "status": "sent",
-                    "message_id": data.get("message_id")
-                })
+                    await websocket.send_json({
+                        "status": "sent",
+                        "message_id": data.get("message_id")
+                    })
+                else:
+                    await websocket.send_json({"error": "Failed to send message"})
+
+            elif action == "edit":
+                message_id = data.get("message_id")
+                new_text = data.get("new_text")
+                if not message_id or not new_text:
+                    await websocket.send_json({"error": "Missing fields for edit"})
+                    continue
+                success = await manager.edit_message(message_id, new_text, client_type, user_id)
+                await websocket.send_json({"status": "edited" if success else "error"})
+
+            elif action == "delete":
+                message_id = data.get("message_id")
+                if not message_id:
+                    await websocket.send_json({"error": "Missing message_id"})
+                    continue
+                success = await manager.delete_message(message_id, client_type, user_id)
+                await websocket.send_json({"status": "deleted" if success else "error"})
+
+            elif action == "react":
+                message_id = data.get("message_id")
+                reaction = data.get("reaction")
+                if not message_id or not reaction:
+                    await websocket.send_json({"error": "Missing fields for react"})
+                    continue
+                success = await manager.add_reaction(message_id, reaction, client_type, user_id)
+                await websocket.send_json({"status": "reacted" if success else "error"})
+
+            elif action == "remove_react":
+                message_id = data.get("message_id")
+                reaction = data.get("reaction")
+                if not message_id or not reaction:
+                    await websocket.send_json({"error": "Missing fields for remove_react"})
+                    continue
+                success = await manager.remove_reaction(message_id, reaction, client_type, user_id)
+                await websocket.send_json({"status": "reaction_removed" if success else "error"})
+
             else:
-                await websocket.send_json({"error": "Failed to send message"})
+                await websocket.send_json({"error": "Unknown action"})
 
     except WebSocketDisconnect:
         manager.disconnect(client_type, user_id, ConnectionPurpose.MESSAGING.value)
@@ -188,7 +266,7 @@ async def notifications_endpoint(
         return
 
     # Connect to manager
-    # ⭐ This will automatically deliver offline notifications
+    # This will automatically deliver offline notifications
     connected = await manager.connect(
         websocket,
         client_type,
@@ -260,10 +338,10 @@ async def start_chat(from_type: str, from_id: str, to_type: str, to_id: str):
 
 @router.post("/chat/end/{from_type}/{from_id}/{to_type}/{to_id}", dependencies=[Depends(login_required)])
 async def end_chat(from_type: str, from_id: str, to_type: str, to_id: str):
-    """End a chat session"""
+    """End a chat session (remove from list)"""
     success = await manager.end_chat(from_type, from_id, to_type, to_id)
     if success:
-        return {"status": "chat_ended"}
+        return success
     return {"error": "Failed to end chat"}
 
 
@@ -302,8 +380,13 @@ async def get_chat_history(
                     "from_type": m.from_type,
                     "from_id": m.from_id,
                     "from_name": m.from_name,
-                    "text": m.text,
+                    "text": m.text if not m.is_deleted else "This message was deleted",
                     "timestamp": m.created_at.isoformat(),
+                    "edited_at": m.edited_at.isoformat() if m.edited_at else None,
+                    "is_deleted": m.is_deleted,
+                    "reactions": m.reactions,
+                    "media_type": m.media_type,
+                    "media_url": m.media_url,
                     "is_read": m.is_read
                 }
                 for m in reversed(messages)
@@ -317,9 +400,9 @@ async def get_chat_history(
 
 @router.get("/chat/partners/{client_type}/{user_id}", dependencies=[Depends(login_required)])
 async def get_chat_partners(client_type: str, user_id: str):
-    """Get all active chat partners for a user"""
-    partners = manager.get_chat_partners(client_type, user_id)
-    return {"partners": [{"type": t, "id": id} for t, id in partners]}
+    """Get all active chat partners for a user, sorted by recent"""
+    partners = await manager.get_chat_partners(client_type, user_id)
+    return {"partners": partners}
 
 
 
@@ -435,15 +518,4 @@ async def mark_messages_read(to_type: str, to_id: str, from_type: str, from_id: 
 
 
 
-
-
-@router.get("/test-endpoint")
-async def test_endpoint():
-    massage = await manager.send_notification(
-        "customers",
-        "16",
-        "Test Notification",
-        "This is a test notification.",
-    )
-    return {"message": massage}
 
