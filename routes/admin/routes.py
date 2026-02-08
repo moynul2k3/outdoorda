@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Response, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Response, UploadFile, File, Query, Path
 from pydantic import BaseModel
 from applications.user.models import User, UserRole
 from applications.admin.models import FAQ, ContactInfo, CustomerInfo, ServiceArea, JobManagementSettings
@@ -285,3 +285,39 @@ async def job_management(
         )
 
     return job_settings
+
+
+
+
+@router.post("/user-list")
+async def get_user_list(
+    user_role: UserRole = Form(...),
+    user: User = Depends(role_required(UserRole.ADMIN))
+    ):
+    
+    users = await User.filter(role=user_role)
+
+    if not users:
+        raise HTTPException(status_code=status.HTTP_204_NO_CONTENT, detail="There is no result")
+    
+    return users
+
+
+
+@router.delete("/delete-user/{user_id}/")
+async def delete_user(
+    user_id: str = Path(...),
+    user: User = Depends(role_required(UserRole.ADMIN))
+):
+    deleted_user = await User.get_or_none(id=user_id)
+
+    if not deleted_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    await deleted_user.delete()
+
+    return {"detail": "The user has been deleted successfully"}
+
