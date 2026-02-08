@@ -9,7 +9,7 @@ migrations/**
 **/.idea/
 *.iml
 run.py
-app/quiklerider-firebase-sdk.json
+#app/outdoorda-firebase-sdk.json
 *.json
 
 # Virtual environment
