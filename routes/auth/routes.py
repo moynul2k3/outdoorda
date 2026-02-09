@@ -79,11 +79,12 @@ async def login_auth2(form_data: OAuth2PasswordRequestForm = Depends()):
     }
 
 
-@router.post("/login",
+@router.post(
+    "/login",
     description="""
 ### 🔐 Test User Accounts
 
-Use the following **test credentials** to explore the API based on different roles and permissions.
+Use the following **test credentials** to explore the API based on different roles.
 
 ---
 
@@ -91,38 +92,28 @@ Use the following **test credentials** to explore the API based on different rol
 - **Email:** `admin@gmail.com`  
 - **Password:** `admin`  
 - **Role:** ADMIN  
-- **Group:** Admins  
-- **Flags:** Staff, Superuser  
-
----
-
-#### 🧑‍💼 **Installer User**
-- **Email:** `installer@gmail.com`  
-- **Password:** `installer`  
-- **Role:** INSTALLER  
-- **Group:** Installers  
 - **Flags:** Staff  
 
 ---
 
-#### 🧑‍💻 **customer One**
-- **Email:** `customer1@gmail.com`  
-- **Password:** `customer`  
-- **Role:** CUSTOMER  
-- **Group:** customers  
+#### 🧑‍💼 **Installer Users**
+- **Email examples:** `user1@example.com`, `user2@example.com`, ... (all installers)  
+- **Password:** `installer`  
+- **Role:** INSTALLER  
+- **Flags:** Staff  
 
 ---
 
-#### 🧑‍💻 **customer Two**
-- **Email:** `customer2@gmail.com`  
+#### 🧑‍💻 **Customer Users**
+- **Email examples:** `customer1@gmail.com`, `customer2@gmail.com`, `user3@example.com`, ... (all customers)  
 - **Password:** `customer`  
 - **Role:** CUSTOMER  
-- **Group:** customers  
 
 ---
 
-⚠️ **Note:** These credentials are for **testing purposes only**.
-""")
+⚠️ **Note:** These credentials are for **testing purposes only**. All installer users share the same password (`installer`), all customer users share the same password (`customer`), and the admin uses `admin`.
+"""
+)
 async def login(
     email: str = Form(...),
     password: str = Form(...),
@@ -183,30 +174,41 @@ async def login(
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid credentials")
 
 
-
-@router.post("/forgot_otp")
-async def forgot_otp(
-    email: str = Form(...)
+@router.post("/send_otp")
+async def send_otp(
+    email: str = Form(...),
+    purpose: str = Form("signup", description="""signup, installer_signup, forgot_password, update_email"""),
 ):
-    # -----------------------------
-    # Validate email
-    # -----------------------------
     key_type = await detect_input_type(email)
     if key_type != "email":
         raise HTTPException(status_code=400, detail="Invalid email")
 
     user = await User.get_or_none(email=email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User not found",
-        )
+    SIGNUP_PURPOSES = {"signup", "installer_signup"}
+    FORGOT_PURPOSES = {"forgot_password", "update_email"}
 
-    # -----------------------------
+
+    # Purpose validation
+    if purpose in SIGNUP_PURPOSES:
+        if user:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered. Please login.",
+            )
+
+    elif purpose in FORGOT_PURPOSES:
+        if not user:
+            raise HTTPException(
+                status_code=400,
+                detail="User not found for password reset.",
+            )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid purpose")
+
+
     # Generate OTP
-    # -----------------------------
     try:
-        otp = await generate_otp(email, "forgot_password")
+        otp = await generate_otp(email, purpose)
     except HTTPException:
         raise
     except Exception:
@@ -215,43 +217,24 @@ async def forgot_otp(
     return {
         "status": "success",
         "message": (
-            f"OTP sent to {email}. Expires in 1 minute."
+            f"OTP sent to {email}. Expires in 5 minute."
             f"{f' OTP: {otp}' if settings.DEBUG else ''}"
         ),
-        "purpose": "forgot_password",
+        "purpose": purpose,
     }
 
-
-
-@router.post("/verify_otp")
-async def verify_otp_route(
-    email: str = Form(...),
-    otp_value: str = Form(...),
-):
-    try:
-        session_key = await verify_otp(email, otp_value, "forgot_password")
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    return {
-        "status": "success",
-        "message": "OTP verified successfully.",
-        "sessionKey": session_key,
-        "purpose": "forgot_password",
-    }
 
 
 @router.post("/signup", response_model=dict)
 async def signup(
+    name: str = Form(...),
     email: str = Form(...),
-    phone: Optional[str] = Form(None),
-    address: Optional[str] = Form(None),
-    dob: Optional[str] = Form(None),
     password: str = Form(...),
     otp_value: str = Form(...),
-    purpose: str = Form(..., description="""signup, installer_signup"""),
+    purpose: str = Form(
+        ...,
+        description="""signup, installer_signup""",
+    ),
 ):
     try:
         await verify_otp(email, otp_value, purpose)
@@ -285,12 +268,10 @@ async def signup(
     hashed_password = pwd_context.hash(password)
 
     user = await User.create(
+        name=name,
         email=email,
         password=hashed_password,
         role=role_data["role"],
-        phone=phone,
-        address=address,
-        dob=dob,
         is_active=True,
     )
 
@@ -307,6 +288,58 @@ async def signup(
         "refresh_token": create_refresh_token(token_data),
         "token_type": "bearer",
         "role": user.role,
+    }
+
+
+@router.post("/verify_otp")
+async def verify_otp_route(
+    email: str = Form(...),
+    otp_value: str = Form(...),
+    purpose: str = Form(...),
+):
+    try:
+        session_key = await verify_otp(email, otp_value, purpose)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "status": "success",
+        "message": "OTP verified successfully.",
+        "sessionKey": session_key,
+        "purpose": purpose,
+    }
+
+
+
+@router.post("/reset_password", response_model=dict)
+async def reset_password(
+        user: User = Depends(get_current_user),
+        old_password: str = Form(...),
+        password: str = Form(...)
+):
+    is_verified = user.verify_password(old_password)
+    if not is_verified:
+        raise HTTPException(status_code=400, detail="Invalid Old Password")
+    user.password = user.set_password(password)
+    await user.save()
+
+    token_data = {
+        "sub": str(user.id),
+        "is_active": user.is_active,
+        "role": user.role,
+        "is_staff": user.is_staff,
+    }
+
+    access_token = create_access_token(token_data)
+    refresh_token = create_refresh_token(token_data)
+
+    return {
+        "message": "Password reset successfully",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
     }
 
 
@@ -356,37 +389,6 @@ async def forgot_password(
     }
 
 
-
-@router.post("/reset_password", response_model=dict)
-async def reset_password(
-    user: User = Depends(get_current_user),
-    old_password: str = Form(...),
-    password: str = Form(...)
-):
-    is_verified = user.verify_password(old_password)
-    if not is_verified:
-        raise HTTPException(status_code=400, detail="Invalid Old Password")
-    user.password = user.set_password(password)
-    await user.save()
-
-    token_data = {
-        "sub": str(user.id),
-        "is_active": user.is_active,
-        "role": user.role,
-        "is_staff": user.is_staff,
-    }
-
-    access_token = create_access_token(token_data)
-    refresh_token = create_refresh_token(token_data)
-
-    return {
-        "message": "Password reset successfully",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
-
-
 @router.get("/verify-token")
 async def verify_token(request: Request, user: User = Depends(get_current_user)):
     response_data = {
@@ -404,49 +406,4 @@ async def verify_token(request: Request, user: User = Depends(get_current_user))
         response_data["new_tokens"] = request.state.new_tokens
 
     return response_data
-
-
-
-
-
-@router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register_user(
-    email: str = Form(...),
-    password: str = Form(...),
-    role: UserRole = Form(UserRole.CUSTOMER),
-):
-    
-    if await User.get_or_none(email=email):
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
-
-    user = await User.create(
-        email=email,
-        password=password,
-        role=role,
-        is_active=True,
-    )
-
-    if role == UserRole.ADMIN:
-        user.is_staff = True
-        await user.save()
-
-    token_data = {
-        "sub": user.id,
-        "role": user.role,
-        "is_active": user.is_active,
-        "is_staff": user.is_staff,
-    }
-
-    return {
-        "status": "success",
-        "message": "Registration successful",
-        "access_token": create_access_token(token_data),
-        "refresh_token": create_refresh_token(token_data),
-        "token_type": "bearer",
-        "role": user.role,
-    }
-
 

@@ -1,146 +1,71 @@
+import random
 from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
 
-from applications.user.models import (
-    User,
-    Group,
-    Permission,
-    UserRole,
-)
+from applications.user.models import User, UserRole
 
 # ==================================================
-# PERMISSIONS
+# USERS (MATCHES User MODEL EXACTLY)
 # ==================================================
 
-PERMISSIONS = [
-    ("View Patients", "view_patient"),
-    ("Edit Patients", "update_patient"),
-    ("Create Recall", "add_recall"),
-    ("Assign Recall", "assign_recall"),
-    ("Send Message", "send_message"),
-    ("View Reports", "view_reports"),
-]
-
-# ==================================================
-# GROUPS → PERMISSIONS
-# ==================================================
-
-GROUPS = {
-    "Agents": [
-        "view_patient",
-        "send_message",
-    ],
-    "Managers": [
-        "view_patient",
-        "add_recall",
-        "assign_recall",
-        "view_reports",
-    ],
-    "Admins": [
-        "view_patient",
-        "update_patient",
-        "add_recall",
-        "assign_recall",
-        "send_message",
-        "view_reports",
-    ],
-}
-
-# ==================================================
-# USERS
-# ==================================================
-
+# 1 Admin
 USERS = [
     {
         "email": "admin@gmail.com",
-        "name": "Admin User",
+        "name": "System Admin",
         "password": "admin",
         "role": UserRole.ADMIN,
         "is_staff": True,
-        "is_superuser": True,
-        "groups": ["Admins"],
+        "is_active": True,
     },
     {
-        "email": "manager@gmail.com",
-        "name": "Manager User",
-        "password": "manager",
+        "email": "staff1@gmail.com",
+        "name": "Staff User",
+        "password": "staff",
         "role": UserRole.INSTALLER,
         "is_staff": True,
-        "groups": ["Managers"],
-    },
-    {
-        "email": "agent1@gmail.com",
-        "name": "Agent One",
-        "password": "agent",
-        "role": UserRole.CUSTOMER,
-        "groups": ["Agents"],
-    },
-    {
-        "email": "agent2@gmail.com",
-        "name": "Agent Two",
-        "password": "agent",
-        "role": UserRole.CUSTOMER,
-        "groups": ["Agents"],
-    },
+        "is_active": True,
+    }
 ]
 
-# ==================================================
-# MAIN SEED FUNCTION
-# ==================================================
-async def seed_auth_data():
+roles = [UserRole.INSTALLER, UserRole.CUSTOMER]
+
+for i in range(1, 50):
+    role = random.choice(roles)
+
+    if role == UserRole.INSTALLER:
+        password = "installer"
+    else:
+        password = "customer"
+
+    user_data = {
+        "email": f"user{i}@example.com",
+        "name": f"{role.value.title()} User {i}",
+        "password": password,
+        "role": role,
+        "is_active": True,
+    }
+    USERS.append(user_data)
+
+
+async def seed_users():
     try:
         async with in_transaction():
-            # -----------------------------
-            # Permissions
-            # -----------------------------
-            permission_map = {}
-            for name, codename in PERMISSIONS:
-                perm, _ = await Permission.get_or_create(
-                    codename=codename,
-                    defaults={"name": name},
-                )
-                permission_map[codename] = perm
 
-            print("✅ Permissions ensured")
-
-            # -----------------------------
-            # Groups
-            # -----------------------------
-            group_map = {}
-            for group_name, perm_codes in GROUPS.items():
-                group, _ = await Group.get_or_create(name=group_name)
-                perms = [permission_map[c] for c in perm_codes]
-                await group.permissions.add(*perms)
-                group_map[group_name] = group
-
-            print("✅ Groups & permissions ensured")
-
-            # -----------------------------
-            # Users
-            # -----------------------------
             for user_data in USERS:
-                groups = user_data.pop("groups", [])
-                password = user_data.pop("password")
+                raw_password = user_data.pop("password")
 
-                # Remove keys that are not fields on User
-                user_data.pop("is_superuser", None)
-
-                # Try to get user by email
                 user = await User.get_or_none(email=user_data["email"])
+
                 if not user:
-                    # Create user
                     user = User(**user_data)
-                    user.password = User.set_password(password)
+                    user.password = raw_password  # hashed in save()
                     await user.save()
                     print(f"✅ Created user: {user.email}")
                 else:
-                    print(f"⚠️ User exists: {user.email}")
+                    print(f"⚠️ User already exists: {user.email}")
 
-                # Assign groups
-                for group_name in groups:
-                    await user.groups.add(group_map[group_name])
-
-            print("\n🎉 Auth seeding completed successfully!")
+            print("\n🎉 50 User seeding completed successfully!")
 
     except IntegrityError as e:
         print("❌ Integrity error:", e)

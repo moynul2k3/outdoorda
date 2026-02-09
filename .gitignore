@@ -56,4 +56,3 @@ Thumbs.db
 # Optional: if you use Aerich
 aerich.ini
 aerich/
-app/outdoorda-firebase-sdk.json

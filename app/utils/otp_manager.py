@@ -2,12 +2,15 @@ from fastapi import HTTPException, Request
 from pydantic import EmailStr
 import secrets
 
+from app.config import settings
 # from app.config import settings
 from app.redis import get_redis
 # from app.utils.send_email import send_email
 # from app.utils.send_sms import send_sms
 import re
 from fastapi.templating import Jinja2Templates
+
+from app.utils.send_email import send_email
 
 templates = Jinja2Templates(directory="templates")
 
@@ -72,21 +75,13 @@ async def generate_otp(user_key: str, purpose: str):
             "Login Verification",
             "Use the OTP below to login to your account.",
         ),
-        "agent_signup": (
+        "signup": (
+            "Login Verification",
+            "Use the OTP below to login to your account.",
+        ),
+        "installer_signup": (
             "Verify Your Email",
             "Thank you for registering as an agent. Please verify your email.",
-        ),
-        "manager_signup": (
-            "Verify Your Email",
-            "Thank you for registering as a manager. Please verify your email.",
-        ),
-        "admin_signup": (
-            "Verify Your Email",
-            "Admin account verification. Please confirm your email.",
-        ),
-        "staff_signup": (
-            "Verify Your Email",
-            "Staff account verification. Please confirm your email.",
         ),
         "forgot_password": (
             "Reset Your Password",
@@ -107,17 +102,18 @@ async def generate_otp(user_key: str, purpose: str):
         "message": message,
     })
 
-    # if key_type == "email":
-    #     await send_email(
-    #         subject=title,
-    #         message=f"Your OTP is: {otp}",
-    #         html_message=html_message,
-    #         to_email=user_key,
-    #         retries=3,
-    #         delay=2,
-    #     )
-    # else:
-    #     raise HTTPException(status_code=400, detail="Invalid email")
+    if key_type == "email":
+        if not settings.DEBUG:
+            await send_email(
+                subject=title,
+                message=f"Your OTP is: {otp}",
+                html_message=html_message,
+                to_email=user_key,
+                retries=3,
+                delay=2,
+            )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid email")
 
     count = await redis.incr(attempts_key)
     if count == 1:
@@ -132,26 +128,19 @@ async def generate_otp(user_key: str, purpose: str):
 async def verify_otp(user_key: str, otp_value: str, purpose: str) -> str:
     redis = get_redis()
     otp_key = _otp_key(user_key, purpose)
-
     stored_otp = await redis.get(otp_key)
-
     if not stored_otp:
         raise HTTPException(status_code=400, detail="OTP expired or not found.")
-
-    # stored_otp = stored_otp.decode()  # FIX
 
     if stored_otp != otp_value:
         raise HTTPException(status_code=400, detail="Invalid OTP.")
 
-    # OTP is valid -> delete OTP
     await redis.delete(otp_key)
 
-    # Create session key
     session_key = secrets.token_urlsafe(32)
     redis_session_key = _session_key(user_key, purpose)
 
     await redis.set(redis_session_key, session_key, ex=OTP_EXPIRY_SECONDS)
-
     return session_key
 
 
