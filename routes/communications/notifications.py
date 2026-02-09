@@ -6,7 +6,6 @@ from app.token import get_current_user
 from app.auth import login_required, role_required
 from firebase_admin import messaging
 from applications.communication.notifications import PushNotification, NotificationSetting
-from app.utils.firebase_push import cred
 from typing import Optional
 
 
@@ -77,6 +76,7 @@ async def send_notification(data: NotificationIn):
 
 @router.get("/test_notification/")
 async def test(user: User = Depends(get_current_user)):
+#    print(f"Firebase JSON>>>>>>>>>>>>>>>>>>>>>>: {firebase_json}")
    deliveries = 42  # Example metrics or calculations
 
    await send_notification(NotificationIn(

@@ -1,6 +1,5 @@
-from tortoise import models, fields
 import uuid
-
+from tortoise import models, fields
 
 
 class PushNotification(models.Model):
