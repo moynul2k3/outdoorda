@@ -79,11 +79,12 @@ async def login_auth2(form_data: OAuth2PasswordRequestForm = Depends()):
     }
 
 
-@router.post("/login",
+@router.post(
+    "/login",
     description="""
 ### 🔐 Test User Accounts
 
-Use the following **test credentials** to explore the API based on different roles and permissions.
+Use the following **test credentials** to explore the API based on different roles.
 
 ---
 
@@ -91,38 +92,28 @@ Use the following **test credentials** to explore the API based on different rol
 - **Email:** `admin@gmail.com`  
 - **Password:** `admin`  
 - **Role:** ADMIN  
-- **Group:** Admins  
-- **Flags:** Staff, Superuser  
-
----
-
-#### 🧑‍💼 **Installer User**
-- **Email:** `installer@gmail.com`  
-- **Password:** `installer`  
-- **Role:** INSTALLER  
-- **Group:** Installers  
 - **Flags:** Staff  
 
 ---
 
-#### 🧑‍💻 **customer One**
-- **Email:** `customer1@gmail.com`  
-- **Password:** `customer`  
-- **Role:** CUSTOMER  
-- **Group:** customers  
+#### 🧑‍💼 **Installer Users**
+- **Email examples:** `user1@example.com`, `user2@example.com`, ... (all installers)  
+- **Password:** `installer`  
+- **Role:** INSTALLER  
+- **Flags:** Staff  
 
 ---
 
-#### 🧑‍💻 **customer Two**
-- **Email:** `customer2@gmail.com`  
+#### 🧑‍💻 **Customer Users**
+- **Email examples:** `customer1@gmail.com`, `customer2@gmail.com`, `user3@example.com`, ... (all customers)  
 - **Password:** `customer`  
 - **Role:** CUSTOMER  
-- **Group:** customers  
 
 ---
 
-⚠️ **Note:** These credentials are for **testing purposes only**.
-""")
+⚠️ **Note:** These credentials are for **testing purposes only**. All installer users share the same password (`installer`), all customer users share the same password (`customer`), and the admin uses `admin`.
+"""
+)
 async def login(
     email: str = Form(...),
     password: str = Form(...),
