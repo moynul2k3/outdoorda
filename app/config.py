@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     DB_NAME: str = "db.sqlite3"
     DB_USER: str = ""
     DB_PASSWORD: str = ""
+    DB_ROOT_PASSWORD: str = ""
     DB_PORT: int = 5432
     DB_ENGINE: str = "postgres"
 
