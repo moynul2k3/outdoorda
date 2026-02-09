@@ -9,8 +9,13 @@ migrations/**
 **/.idea/
 *.iml
 run.py
+<<<<<<< HEAD
 app/outdoorda-firebase-sdk.json
 *.json
+=======
+#app/outdoorda-firebase-sdk.json
+#*.json
+>>>>>>> e56837227797371942cba0441f73841a28c08e21
 
 # Virtual environment
 menv/
