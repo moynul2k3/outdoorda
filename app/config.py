@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     DB_NAME: str = "db.sqlite3"
     DB_USER: str = ""
     DB_PASSWORD: str = ""
+    DB_ROOT_PASSWORD: str = ""
     DB_PORT: int = 5432
     DB_ENGINE: str = "postgres"
 
@@ -36,6 +37,8 @@ class Settings(BaseSettings):
 
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+
+    FIREBASE_KEY_BASE64: str = ""
 
     def model_post_init(self, __context):
         if self.DB_ENGINE == "sqlite":
