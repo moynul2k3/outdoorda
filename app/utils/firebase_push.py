@@ -6,7 +6,6 @@ import firebase_admin
 from firebase_admin import credentials, messaging
 
 
-# Remove newlines and decode
 firebase_key = settings.FIREBASE_KEY_BASE64.replace("\n", "").replace("\r", "")
 firebase_json = json.loads(base64.b64decode(firebase_key))
 
