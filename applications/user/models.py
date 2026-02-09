@@ -32,7 +32,7 @@ class UserRole(str, Enum):
 
 class User(models.Model):
     id = fields.CharField(pk=True, max_length=60)
-    name = fields.CharField(max_length=50, null=True, blank=True)
+    name = fields.CharField(max_length=50, null=True, blank=True, default="Unknown User")
     email = fields.CharField(max_length=100, null=True, unique=True)
     password = fields.CharField(max_length=128)
     photo = fields.CharField(max_length=255, null=True, blank=True)
