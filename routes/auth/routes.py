@@ -227,6 +227,7 @@ async def send_otp(
 
 @router.post("/signup", response_model=dict)
 async def signup(
+    name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
     otp_value: str = Form(...),
@@ -267,6 +268,7 @@ async def signup(
     hashed_password = pwd_context.hash(password)
 
     user = await User.create(
+        name=name,
         email=email,
         password=hashed_password,
         role=role_data["role"],
