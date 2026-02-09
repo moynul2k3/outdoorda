@@ -13,3 +13,5 @@ firebase_json = json.loads(base64.b64decode(firebase_key))
 cred = credentials.Certificate(firebase_json)
 firebase_admin.initialize_app(cred)
 print(f"Firebase initialized {firebase_admin.get_app().name}")
+
+print("firebase json file>>>>>>>>>>> ",firebase_json)
