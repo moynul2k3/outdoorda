@@ -15,6 +15,7 @@ from app.routes import register_routes
 from app.utils.sync_permissions import sync_permissions
 from app.utils.auto_routing import get_module
 from fastapi.templating import Jinja2Templates
+from app.dummy.user import seed_users
 
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -28,6 +29,8 @@ async def lifespan(app: FastAPI):
         await sync_permissions()
     except Exception as e:
         print(f"--Permission sync skipped: {e}")
+    if settings.DEBUG:
+        await seed_users()
 
     for app_name in get_module(base_dir="applications"):
         try:
