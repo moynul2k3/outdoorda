@@ -79,7 +79,7 @@ async def login_auth2(form_data: OAuth2PasswordRequestForm = Depends()):
     }
 
 
-@router.post("/login/",
+@router.post("/login",
     description="""
 ### 🔐 Test User Accounts
 
@@ -184,7 +184,7 @@ async def login(
 
 
 
-@router.post("/forgot_otp/")
+@router.post("/forgot_otp")
 async def forgot_otp(
     email: str = Form(...)
 ):
@@ -223,7 +223,7 @@ async def forgot_otp(
 
 
 
-@router.post("/verify_otp/")
+@router.post("/verify_otp")
 async def verify_otp_route(
     email: str = Form(...),
     otp_value: str = Form(...),
@@ -243,8 +243,74 @@ async def verify_otp_route(
     }
 
 
+@router.post("/signup", response_model=dict)
+async def signup(
+    email: str = Form(...),
+    phone: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    dob: Optional[str] = Form(None),
+    password: str = Form(...),
+    otp_value: str = Form(...),
+    purpose: str = Form(..., description="""signup, installer_signup"""),
+):
+    try:
+        await verify_otp(email, otp_value, purpose)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP verification failed. Enter correct OTP.",
+        )
 
-@router.post("/forgot_password/", response_model=dict)
+    lookup_field = await detect_input_type(email)
+    if lookup_field != "email":
+        raise HTTPException(status_code=400, detail="Invalid email")
+
+    if await User.get_or_none(email=email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    ROLE_MAP = {
+        "signup": {
+            "role": UserRole.CUSTOMER,
+        },
+        "installer_signup": {
+            "role": UserRole.INSTALLER,
+        },
+    }
+
+    if purpose not in ROLE_MAP:
+        raise HTTPException(status_code=400, detail="Invalid signup purpose")
+
+    role_data = ROLE_MAP[purpose]
+
+    hashed_password = pwd_context.hash(password)
+
+    user = await User.create(
+        email=email,
+        password=hashed_password,
+        role=role_data["role"],
+        phone=phone,
+        address=address,
+        dob=dob,
+        is_active=True,
+    )
+
+    token_data = {
+        "sub": str(user.id),
+        "role": user.role,
+        "is_active": user.is_active,
+        "is_staff": user.is_staff,
+    }
+
+    return {
+        "message": "User created successfully",
+        "access_token": create_access_token(token_data),
+        "refresh_token": create_refresh_token(token_data),
+        "token_type": "bearer",
+        "role": user.role,
+    }
+
+
+@router.post("/forgot_password", response_model=dict)
 async def forgot_password(
     email: str = Form(...),
     password: str = Form(...),
@@ -291,7 +357,7 @@ async def forgot_password(
 
 
 
-@router.post("/reset_password/", response_model=dict)
+@router.post("/reset_password", response_model=dict)
 async def reset_password(
     user: User = Depends(get_current_user),
     old_password: str = Form(...),
@@ -321,7 +387,7 @@ async def reset_password(
     }
 
 
-@router.get("/verify-token/")
+@router.get("/verify-token")
 async def verify_token(request: Request, user: User = Depends(get_current_user)):
     response_data = {
         "status": "success",
@@ -343,9 +409,8 @@ async def verify_token(request: Request, user: User = Depends(get_current_user))
 
 
 
-@router.post("/register/", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(
-    name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
     role: UserRole = Form(UserRole.CUSTOMER),
@@ -358,12 +423,10 @@ async def register_user(
         )
 
     user = await User.create(
-        name=name,
         email=email,
-        password=password,  # auto-hashed in model.save()
+        password=password,
         role=role,
         is_active=True,
-        is_staff=False,
     )
 
     if role == UserRole.ADMIN:

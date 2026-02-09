@@ -97,9 +97,9 @@ class User(models.Model):
             if self.role == UserRole.ADMIN:
                 text = "ADM"
             if self.role == UserRole.INSTALLER:
-                text = "MNG"
-            if self.role == UserRole.ADMIN:
-                text = "AGN"
+                text = "INT"
+            if self.role == UserRole.CUSTOMER:
+                text = "CUS"
             self.id = (await generate_unique(User, text=text, max_length=5)).upper()
         if self.password and not self.password.startswith("$2b$"):
             self.password = self.set_password(self.password)
