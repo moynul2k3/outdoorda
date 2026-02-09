@@ -17,6 +17,14 @@ USERS = [
         "role": UserRole.ADMIN,
         "is_staff": True,
         "is_active": True,
+    },
+    {
+        "email": "staff1@gmail.com",
+        "name": "Staff User",
+        "password": "staff",
+        "role": UserRole.INSTALLER,
+        "is_staff": True,
+        "is_active": True,
     }
 ]
 
@@ -27,17 +35,14 @@ for i in range(1, 50):
 
     if role == UserRole.INSTALLER:
         password = "installer"
-        is_staff = True
     else:
         password = "customer"
-        is_staff = False
 
     user_data = {
         "email": f"user{i}@example.com",
         "name": f"{role.value.title()} User {i}",
         "password": password,
         "role": role,
-        "is_staff": is_staff,
         "is_active": True,
     }
     USERS.append(user_data)
