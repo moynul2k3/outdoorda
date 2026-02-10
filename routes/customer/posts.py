@@ -131,6 +131,16 @@ async def place_bid(
     post.status = StatusEnum.RECEIVING_BIDS
     await post.save()
 
+    try:
+        await send_notification(NotificationIn(
+            user_id=post.customer_id,
+            title="New bid",
+            body=f"you got bid of {bid.price} on {post.id}"
+        ))
+
+    except:
+        pass
+
     return {"bid": bid}
 
 
@@ -198,6 +208,16 @@ async def accept_bid(
 
     await post.save()
 
+    try:
+        await send_notification(NotificationIn(
+            user_id=bid.installer_id,
+            title="bid accepted",
+            body=f"Your bid of {bid.price} has been accepted"
+        ))
+
+    except:
+        pass
+
     return {"message": "Bid accepted successfully", "post": post}
 
 
@@ -212,6 +232,8 @@ async def accept_post_without_bid(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     
     post = await PostRequest.filter(id=post_id).first()
+
+    
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
@@ -223,6 +245,16 @@ async def accept_post_without_bid(
     post.assigned_at = datetime.now()
 
     await post.save()
+
+    try:
+        await send_notification(NotificationIn(
+            user_id=post.customer_id,
+            title="Installer Assigned",
+            body=f"Installer {user.name}"
+        ))
+
+    except:
+        pass
 
     return {"message": "Post accepted without bid successfully", "post": post}
 
