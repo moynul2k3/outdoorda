@@ -9,6 +9,7 @@ from app.auth import login_required, role_required
 from app.utils.file_manager import save_file
 from typing import Optional
 from datetime import datetime
+from tortoise.expressions import Q
 
 
 
@@ -74,19 +75,67 @@ async def create_post(
 
 
 
+# @router.get("/posts/")
+# async def list_posts(
+#     new_status: StatusEnum | None = Query(None),
+#     user: User = Depends(get_current_user)
+# ):
+#     if not user:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    
+#     if user.role == UserRole.CUSTOMER:
+#         filters = {"customer_id": user.id}
+#     if user.role == UserRole.INSTALLER:
+#         areas = await InstallerServiceArea.filter(installer_id = user.id).prefetch_related("area")
+#         area_ids = []
+#         for area in areas:
+#             area_ids.append(area.area_id)
+#         filters = {"area_id__in": area_ids}
+#         filters["installer_id__in"] = [user.id, "null"]
+#     if new_status:
+#         filters["status"] = new_status
+
+#     posts = await PostRequest.filter(**filters).prefetch_related("customer").order_by("-created_at")
+#     return {"posts": posts}
+
+
+
 @router.get("/posts/")
 async def list_posts(
-    status: StatusEnum | None = Query(None),
+    new_status: StatusEnum | None = Query(None),
     user: User = Depends(get_current_user)
 ):
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
-    
-    filters = {"customer_id": user.id}
-    if status:
-        filters["status"] = status
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
 
-    posts = await PostRequest.filter(**filters).order_by("-created_at")
+    query = Q()
+
+    # 👤 CUSTOMER: only their own posts
+    if user.role == UserRole.CUSTOMER:
+        query &= Q(customer_id=user.id)
+
+    # 🛠 INSTALLER: posts in their service areas
+    elif user.role == UserRole.INSTALLER:
+        areas = await InstallerServiceArea.filter(
+            installer_id=user.id
+        ).values_list("area_id", flat=True)
+
+        query &= Q(area_id__in=areas)
+        query &= (Q(installer_id=user.id) | Q(installer_id__isnull=True))
+
+    if new_status:
+        query &= Q(status=new_status)
+
+    posts = await (
+        PostRequest
+        .filter(query)
+        .prefetch_related("customer")
+        .order_by("-created_at")
+    )
+
     return {"posts": posts}
 
 
@@ -98,7 +147,7 @@ async def get_post(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     
-    post = await PostRequest.filter(id=post_id).first()
+    post = await PostRequest.filter(id=post_id).prefetch_related("customer").first()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
@@ -153,30 +202,37 @@ async def list_bids(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     
-    print("USER ROLE:", user.role)
     
     if post_id and user.role == UserRole.CUSTOMER:
-        print("hello")
-        post = await PostRequest.filter(id=post_id, customer_id=user.id).first()
+        post = await PostRequest.filter(id=post_id, customer_id=user.id).prefetch_related("customer").first()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-        bids = await Bid.filter(post_request_id=post.id).order_by("-created_at")
+        bids = await Bid.filter(post_request_id=post.id).prefetch_related("installer").order_by("-created_at")
+        customer_name = post.customer.name
+        customer_id = post.customer.id
+        customer_photo= post.customer.photo
     elif post_id and user.role == UserRole.INSTALLER:
         print("INSTALLER BID LISTING FOR POST:", post_id, "USER ID:", user.id)
-        post = await PostRequest.filter(id=post_id).first()
+        post = await PostRequest.filter(id=post_id).prefetch_related("customer").first()
         print("FOUND POST:", post)
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-        bids = await Bid.filter(post_request_id=post.id, installer_id=user.id).order_by("-created_at")
+        bids = await Bid.filter(post_request_id=post.id, installer_id=user.id).prefetch_related("installer").order_by("-created_at")
+        customer_name = post.customer.name
+        customer_id = post.customer.id
+        customer_photo= post.customer.photo
     elif not post_id and user.role == UserRole.INSTALLER:
         print("INSTALLER ALL BIDS LISTING FOR USER ID:", user.id)
-        bids = await Bid.filter(installer_id=user.id).order_by("-created_at")
+        bids = await Bid.filter(installer_id=user.id).prefetch_related("post_request__customer").order_by("-created_at")
         print("INSTALLER ALL BIDS:", bids)
+        customer_name = ""
+        customer_id = ""
+        customer_photo= ''
         return {"bids": bids}
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
-    return {"post": post, "bids": bids}
+    return {"customer_id": customer_id, "customer_name": customer_name, "customer_photo": customer_photo, "post": post, "bids": bids}
 
 
 
@@ -231,7 +287,7 @@ async def accept_post_without_bid(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     
-    post = await PostRequest.filter(id=post_id).first()
+    post = await PostRequest.filter(id=post_id).prefetch_related("customer").first()
 
     
     if not post:
