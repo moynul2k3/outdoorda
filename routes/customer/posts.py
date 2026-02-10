@@ -264,7 +264,7 @@ async def accept_post_without_bid(
 @router.patch("/posts/{post_id}/update/")
 async def update_post(
     post_id: str,
-    status: Optional[StatusEnum] = Form(None),
+    new_status: Optional[StatusEnum] = Form(None),
     scheduled_date: Optional[datetime] = Form(None),
     note: Optional[str] = Form(None),
     is_additional_service: Optional[bool] = Form(None),
@@ -272,7 +272,7 @@ async def update_post(
     is_customer_satisfied: Optional[bool] = Form(None),
     customer_satisfaction_note: Optional[str] = Form(None),
     user: User = Depends(get_current_user)
-):
+    ):
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
         
@@ -281,8 +281,13 @@ async def update_post(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
         update_fields = {}
-        if status is not None:
-            update_fields["status"] = status
+        if new_status is not None:
+            if user.role == UserRole.INSTALLER and post.status == StatusEnum.INSTALLER_ASSIGNED and new_status == StatusEnum.IN_PROGRESS:
+                update_fields["status"] = new_status
+            elif user.role == UserRole.CUSTOMER and post.status in [StatusEnum.IN_PROGRESS, StatusEnum.INSTALLER_ASSIGNED] and new_status == StatusEnum.COMPLETED:
+                update_fields["status"] = new_status
+            else: 
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to change this status!")
         if scheduled_date is not None:
             update_fields["scheduled_date"] = scheduled_date
         if note is not None:
