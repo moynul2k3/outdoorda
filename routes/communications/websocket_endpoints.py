@@ -161,6 +161,8 @@ async def chat_endpoint(
                     media_url
                 )
 
+                print(success)
+
                 if success:
                     # Publish to Redis for real-time analytics
                     await redis.publish(f"chat:{to_type}:{to_id}", json.dumps({

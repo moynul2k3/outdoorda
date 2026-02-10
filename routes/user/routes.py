@@ -17,8 +17,7 @@ UserOut = pydantic_model_creator(User, name="UserOut", exclude=("password",))
 async def serialize_user(user: User) -> Dict[str, Any]:
     await user.fetch_related(
         "groups",
-        "user_permissions",
-        "report_to"
+        "user_permissions"
     )
 
     groups = await user.groups.all()
@@ -29,10 +28,6 @@ async def serialize_user(user: User) -> Dict[str, Any]:
         "phone": user.phone,
         "name": user.name,
         "photo": user.photo,
-        "department": user.department,
-        "report_to_id": user.report_to.id if user.report_to else None,
-        "report_to_name": user.report_to.name if user.report_to else None,
-        "report_to_email": user.report_to.email if user.report_to else None,
         "role": user.role,
         "is_active": user.is_active,
         "is_staff": user.is_staff,
@@ -137,26 +132,14 @@ async def update_user_profile_by_admin(
     user_id: Optional[str] = Query(None),
 
     name: Optional[str] = Form(None),
-    department: Optional[str] = Form(None),
-    report_to_id: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
 ):
     user = await User.get_or_none(id=user_id)
     update_data = {}
 
-    if report_to_id is not None:
-        manager = await User.get_or_none(id=report_to_id)
-        if manager is not None:
-            update_data["report_to_id"] = report_to_id
-        else:
-            raise HTTPException(status_code=400, detail="Manager not found")
-
     if name is not None:
         update_data["name"] = name
-
-    if department is not None:
-        update_data["department"] = department
 
     if phone is not None:
         update_data["phone"] = phone
