@@ -540,6 +540,8 @@ class ProductionConnectionManager:
 
             message_id = str(uuid.uuid4())
 
+            print(f"from send message {message_id}")
+
             # Store in database
             msg = ChatMessage(
                 from_type=from_type,
@@ -596,10 +598,12 @@ class ProductionConnectionManager:
                 "media_type": media_type,
                 "media_url": media_url
             }
+            print(f"after payload {payload}")
 
             # Send if online and mark delivered
             conn = self.get_connection(to_type, to_id, ConnectionPurpose.MESSAGING.value)
             if conn and conn.is_active:
+                print(f"connetion active {conn}")
                 success = await conn.send_json(payload)
                 if success:
                     msg.is_delivered = True
