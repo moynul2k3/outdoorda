@@ -42,6 +42,7 @@ class User(models.Model):
     role = fields.CharEnumField(UserRole)
 
     is_active = fields.BooleanField(default=True)
+    is_suspended = fields.BooleanField(default=False)
     is_staff = fields.BooleanField(default=False)
 
     last_login_at = fields.DatetimeField(null=True)
