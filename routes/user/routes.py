@@ -30,6 +30,7 @@ async def serialize_user(user: User) -> Dict[str, Any]:
         "photo": user.photo,
         "role": user.role,
         "is_active": user.is_active,
+        "is_suspended": user.is_suspended,
         "is_staff": user.is_staff,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
@@ -201,15 +202,25 @@ async def delete_user(user: User = Depends(login_required)):
         }
 
 
-@router.delete("/delete", response_model=Dict[str, Any], dependencies=[Depends(permission_required('delete_user'))])
-async def delete_user_by_admin(
-    user_id: Optional[str] = Query(None),
+
+
+@router.patch("/suspend", response_model=Dict[str, Any], dependencies=[Depends(permission_required("update_user"))])
+async def toggle_user_suspend_status(
+    user_id: Optional[str] = Query(..., description="User ID to suspend/unsuspend"),
 ):
     user = await User.get_or_none(id=user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
     async with in_transaction():
-        await delete_file(user.photo)
-        await user.delete()
-        return {
-            "details": "User deleted",
-            "status": "success",
-        }
+        user.is_suspended = not user.is_suspended
+        await user.save(update_fields=["is_suspended"])
+
+    return {
+        "details": "User suspended successfully"
+        if user.is_suspended
+        else "User unsuspended successfully",
+        "status": "success",
+        "is_suspended": user.is_suspended,
+    }
